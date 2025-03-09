@@ -11,6 +11,11 @@ I'd heard about graph databases so I decided to learn [Neo4j](https://neo4j.com/
 
 If you want to use this, you'll also need a Companies House API key (https://developer.company-information.service.gov.uk/get-started/) so that you can query their database. This is pretty easy, and I didn't have to give any personal info or anything to get it. This is, however, **rate limited**; you can only make 600 api requests every 5 minutes, so mapping out large scale projectsd under these restrictions is going to be tough. I left this running for almost a day and was able to create a database of 84,000 nodes--not nearly enough considering the current highest-scoring 'officer' I've found has [over 120,000 appointments](https://find-and-update.company-information.service.gov.uk/officers/8d_bnTiwfxh8JIr3YfuwkmkWkCg/appointments). Even in the best case, it would take just under 17 hours to map out every single appointment for this one company, and that's _only_ a depth of one.
 
+# show me the goods
+
+Here's map I generated in about four seconds using this tool to see if Andrew Tate had any interesting looking connections. Neat!
+![image](https://github.com/user-attachments/assets/dd1671f6-9251-452d-84ee-182b4aa246d7)
+
 
 # Still to-do
 1. Right now it only shows the first 35 connected companies for a given officer lol. I do need to fix this; in practice these companies will still show up if they have any other officers with <=35 appointments, but they'll show up in the browser as disconnected.
