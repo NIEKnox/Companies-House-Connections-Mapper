@@ -16,6 +16,7 @@ from credentials import neo4j_uri, neo4j_username, neo4j_password, neo4j_databas
 testing_nodewrite_enabled = False
 testing_relationshipwrite_enabled = False
 testing_purgedb_enabled = False
+prepurge = True
 purge_at_end = False
 
 # creds
@@ -42,8 +43,25 @@ def properties_wrapper(properties):
     properties_query = "{"
     for key in properties:
         keystring = str(key)
-        properties_query += keystring.strip("'") + ": \""
-        properties_query += str(properties[key]) + "\", "
+        properties_query += keystring.strip("'")
+        property_value = properties[key]
+        # we don't want to quote numbers; keep numbers numeric
+        numeric = False
+        try:
+            property_value = int(property_value)
+            numeric = True
+        except:
+            try:
+                property_value = float(property_value)
+                numeric = True
+            except:
+                pass
+
+        if numeric:
+            properties_query += ": " + str(property_value) + ", "
+        # all else is wrapped in a quote
+        else:
+            properties_query += ": \"" + str(property_value) + "\", "
     properties_query = properties_query.rstrip(', ') + "}"
 
     return properties_query
@@ -126,7 +144,8 @@ headers = {
     'Authorization': companies_house_auth_header,
 }
 
-base_url = 'https://api.company-information.service.gov.uk'
+base_url_api = 'https://api.company-information.service.gov.uk'
+base_url_web = 'https://find-and-update.company-information.service.gov.uk'
 
 # improvements:
 # 1. handle rate limiting
@@ -134,9 +153,9 @@ base_url = 'https://api.company-information.service.gov.uk'
 
 
 # queries companies house using creds and returns the data
-def query_handler(appended_url, headers = headers, base_url = 'https://api.company-information.service.gov.uk'):
-    search_url = base_url + appended_url
-    # TODO: add error handling? response 429
+def query_handler(appended_url, headers = headers, base_url_api = base_url_api):
+    search_url = base_url_api + appended_url
+    # TODO: make 429 more tight with time
     data = requests.get(search_url, auth=None, headers=headers)
     while data.status_code == 429:
         print('zzz...')
@@ -148,20 +167,20 @@ def query_handler(appended_url, headers = headers, base_url = 'https://api.compa
     return data_text_dict
 
 def write_node_officer(data):
-    name = data['name']
+    officer_properties = {}
+    officer_properties['ID'] = 'ID_' + data['etag']
+    officer_properties['name'] = data['name']
     try:
         dob = str(data['date_of_birth']['year']) + '-' + str(data['date_of_birth']['month'])
     except:
         dob = 'Unknown'
-    id = 'ID_' + data['etag']
-    inactive_count = str(data['inactive_count'])
-    resigned_count = str(data['resigned_count'])
-
-    officer_properties = {'ID': id, 'name': name, 'dob': dob, 'inactive_count': inactive_count,
-                  'resigned_count': resigned_count}
+    officer_properties['dob'] = dob
+    officer_properties['inactive_count'] = str(data['inactive_count'])
+    officer_properties['resigned_count'] = str(data['resigned_count'])
+    officer_properties['link'] = base_url_web + data['links']['self']
 
     # make node if not exists
-    write_node(node_id=id, labels=['person'], properties=officer_properties, session=session)
+    write_node(node_id=officer_properties['ID'], labels=['person'], properties=officer_properties, session=session)
 
     return officer_properties
 
@@ -176,6 +195,9 @@ def write_node_company(data, source):
         company_id = 'ID_' + str(company_properties['company_number'])
         company_properties['ID'] = company_id
         company_properties['company_status'] = data['appointed_to']['company_status']
+        company_properties['link'] = base_url_web + data['links']['company']
+
+    ## This is currently redundant since company node writing is handled in the officer handler
     elif source == 'company':
         company_properties['name'] = data['company_name']
         company_properties['company_number'] = data['company_number']
@@ -232,11 +254,6 @@ def officer_handler(data=None):
 
     return companies_list
 
-# test3 = query_handler('/officers/auRgqZX1stWO-EoEyget_Mle45c/appointments')
-# print(test3)
-# newlist = officer_handler(test3)
-# print(newlist)
-
 # takes in the data for a company, returns all connected officers. officer_handler builds all nodes
 def company_handler(data=None):
     # handle missing data
@@ -255,13 +272,6 @@ def company_handler(data=None):
         officers_list.append(officer['links']['officer']['appointments'])
 
     return officers_list
-
-
-test = query_handler('/company/10435750/officers')
-officers_list = company_handler(test)
-print(officers_list)
-# test2 = query_handler('/company/10435750/officers')
-# print(test2)
 
 
 # start with a url. scrape info from url, load into neo4j, find links, repeat.
@@ -296,7 +306,7 @@ def crawler_workhorse(starting_url, starting_type=None, to_depth = 5):
         currently_crawling = 'companies'
 
 
-            # if starting type is a company, run the
+    # if starting type is a company, run the company code
     elif starting_type == 'company':
         print("Starting node is a COMPANY. Crawling...")
 
@@ -360,9 +370,23 @@ def crawler_workhorse(starting_url, starting_type=None, to_depth = 5):
             currently_crawling = 'officers'
 
 
+if prepurge:
+    purge_db()
+
+### CODE IN HERE
+
+crawler_workhorse(starting_url = '/officers/auRgqZX1stWO-EoEyget_Mle45c/appointments', to_depth=2)
+
+test3 = query_handler('/company/10435750/officers')
+print(test3['links']['self'])
+
+for item in test3:
+    print(item, test3[item])
 
 
-crawler_workhorse(starting_url = '/officers/UNUnLctDoR4WsYnYTFaHbvIHhW8/appointments', to_depth=4)
+
+
+
 
 if purge_at_end:
     purge_db()
